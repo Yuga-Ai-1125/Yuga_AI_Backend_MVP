@@ -4,13 +4,14 @@ dotenv.config();
 import db from "./db/index.js";
 import authRoutes from "./routes/auth-route.js";
 import cookieParser from "cookie-parser";
-
+import courseRoutes from "./routes/course-route.js";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(cookieParser());
 app.use("/api/auth", authRoutes);
+app.use("/api", courseRoutes);
 app.get("/", (req, res) => {
   res.send("Welcome to the Yuga Backend!");
 });
