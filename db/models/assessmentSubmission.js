@@ -7,7 +7,7 @@ const assessmentSubmissionSchema = new mongoose.Schema({
     required: true,
   },
   lesson: {
-    type: String, // or mongoose.Schema.Types.ObjectId if referencing Lesson model
+    type: String,
     required: true,
   },
   answers: [

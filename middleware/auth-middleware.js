@@ -10,7 +10,13 @@ export const verifyToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
+
+    req.user = { id: decoded.id || decoded._id || decoded.userId };
+
+    if (!req.user.id) {
+      return res.status(401).json({ message: "User ID missing in token" });
+    }
+
     next();
   } catch (error) {
     console.error("Token verification error:", error);
