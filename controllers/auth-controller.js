@@ -4,152 +4,179 @@ import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
 
-// Register a new user
-export const signup = async (req, res) => {
-  const { fullName, email, password } = req.body;
-  try {
-    if (!fullName || !email || !password) {
-      return res.status(400).json({ message: "All fields are required" });
-    }
-    if (password.length < 6) {
-      return res
-        .status(400)
-        .json({ message: "Password must be at least 6 characters long" });
-    }
+// ✅ Signup
 
+export const signup = async (req, res) => {
+  const { fullName, email, password, confirmPassword } = req.body;
+
+  try {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(409).json({ message: "Email already registered" });
     }
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const newUser = new User({ fullName, email, password, confirmPassword });
 
-    const newUser = new User({ fullName, email, password: hashedPassword });
-
-    generateToken(newUser._id, res);
     await newUser.save();
 
+    const token = generateToken(newUser._id);
+
     res.status(201).json({
-      _id: newUser._id,
-      fullName: newUser.fullName,
-      email: newUser.email,
+      message: "User registered successfully",
+      user: {
+        _id: newUser._id,
+        fullName: newUser.fullName,
+        email: newUser.email,
+      },
+      token,
     });
   } catch (error) {
-    console.error("Signup Error:", error);
-    res.status(500).json({ message: "Internal server error" });
+    console.error(error);
+
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({ message: "Validation failed", errors });
+    }
+
+    res.status(500).json({ message: "Server error" });
   }
 };
 
-// Login
+// ✅ Login Controller
 export const login = async (req, res) => {
   const { email, password } = req.body;
+
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: "User not found" });
+
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch)
-      return res.status(400).json({ message: "Invalid credentials" });
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
 
-    generateToken(user._id, res);
+    const token = generateToken(user._id);
     res.status(200).json({
-      _id: user._id,
-      fullName: user.fullName,
-      email: user.email,
-      token: req.cookies.jwt,
+      message: "Login successful",
+      token,
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+      },
     });
-  } catch (error) {
-    console.error("Login Error:", error);
+  } catch (err) {
+    console.error("Login error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
-
-// Logout
+// ✅ Logout
 export const logout = (req, res) => {
   try {
-    res.cookie("jwt", "", { maxAge: 0 });
+    res.clearCookie("jwt");
     res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
     console.error("Logout Error:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
+// forgotPassword
 
-//forgot password
 export const forgotPassword = async (req, res) => {
   const { email } = req.body;
+
   try {
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    // Check if user exists
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: "User not found" });
 
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate reset token and expiry
     const resetToken = crypto.randomBytes(32).toString("hex");
-    const tokenExpires = Date.now() + 3600000; // 1 hour
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
 
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = tokenExpires;
-    await user.save();
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-    const resetLink = `http://localhost:5173/reset-password/${resetToken}`;
+    await user.save({ validateBeforeSave: false });
 
+    // 🔐 Set up nodemailer
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        user: process.env.EMAIL_USER, // Your email from .env
+        pass: process.env.EMAIL_PASS, // App password
       },
     });
 
+    const resetUrl = `http://localhost:3000/reset-password/${resetToken}`;
+
     const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Password Reset Request",
+      from: `"Yuga Platform" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: "Reset your password",
       html: `
-        <p>You requested a password reset.</p>
-        <p>Click <a href="${resetLink}">here</a> to reset your password. This link is valid for 1 hour.</p>
+        <p>Hello ${user.fullName},</p>
+        <p>You requested a password reset. Click the link below to reset your password:</p>
+        <a href="${resetUrl}">Reset Password</a>
+        <p>This link will expire in 10 minutes.</p>
       `,
     };
 
     await transporter.sendMail(mailOptions);
 
-    res.status(200).json({ message: "Reset email sent successfully" });
+    res.status(200).json({ message: "Reset link sent to email" });
   } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Something went wrong", error: err.message });
-  }
-};
-
-// Reset password
-export const resetPassword = async (req, res) => {
-  const { token, newPassword } = req.body;
-  try {
-    const user = await User.findOne({
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() },
-    });
-    if (!user) {
-      return res.status(400).json({ message: "Invalid or expired token" });
-    }
-    if (newPassword.length < 6) {
-      return res
-        .status(400)
-        .json({ message: "Password must be at least 6 characters long" });
-    }
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-    user.password = hashedPassword;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
-    await user.save();
-    res.status(200).json({ message: "Password reset successfully" });
-  } catch (error) {
-    console.error("Reset Password Error:", error);
+    console.error("❌ Error in forgotPassword:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
+// ✅ RESET PASSWORD CONTROLLER
+export const resetPassword = async (req, res) => {
+  const { token, newPassword } = req.body;
 
-//get user profile
+  if (!token || !newPassword) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
+  try {
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
+
+    user.password = newPassword;
+    user.confirmPassword = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+
+    await user.save();
+
+    res.status(200).json({ message: "Password reset successful" });
+  } catch (err) {
+    console.error("Password reset error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+// ✅ Get User Profile
 export const getUserProfile = async (req, res) => {
   try {
     const userId = req.params.id;
@@ -167,30 +194,40 @@ export const getUserProfile = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
-// Update user profile
+
+// ✅ Update User Profile
 export const updateUserProfile = async (req, res) => {
   try {
     const userId = req.params.id;
 
-    console.log("Request body:", req.body); // 🔍 Add this line
+    if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid user ID format" });
+    }
 
     if (!req.body || Object.keys(req.body).length === 0) {
       return res.status(400).json({ message: "Request body is empty" });
     }
 
-    const updateUser = await User.findByIdAndUpdate(
+    if ("password" in req.body || "confirmPassword" in req.body) {
+      return res
+        .status(400)
+        .json({ message: "Password updates not allowed in profile update" });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: req.body },
       { new: true, runValidators: true }
     ).select("-password");
 
-    if (!updateUser) {
+    if (!updatedUser) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res
-      .status(200)
-      .json({ message: "Profile updated successfully", user: updateUser });
+    res.status(200).json({
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
   } catch (error) {
     console.error("Update User Profile Error:", error);
     res.status(500).json({ message: "Internal server error" });
