@@ -52,13 +52,20 @@ export const login = async (req, res) => {
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
-
+    console.log(user.email);
+    console.log(user.password);
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const token = generateToken(user._id);
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Lax", // or "None" if using cross-site cookies with HTTPS
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
     res.status(200).json({
       message: "Login successful",
       token,
@@ -121,7 +128,7 @@ export const forgotPassword = async (req, res) => {
       },
     });
 
-    const resetUrl = `http://localhost:3000/reset-password/${resetToken}`;
+    const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
 
     const mailOptions = {
       from: `"Yuga Platform" <${process.env.EMAIL_USER}>`,
@@ -196,6 +203,7 @@ export const getUserProfile = async (req, res) => {
 };
 
 // ✅ Update User Profile
+
 export const updateUserProfile = async (req, res) => {
   try {
     const userId = req.params.id;
@@ -231,5 +239,15 @@ export const updateUserProfile = async (req, res) => {
   } catch (error) {
     console.error("Update User Profile Error:", error);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const getUserProfileById = async (userId) => {
+  try {
+    const user = await User.findById(userId).select("-password");
+    return user;
+  } catch (err) {
+    console.error("GetUserProfileById Error:", err);
+    throw err;
   }
 };

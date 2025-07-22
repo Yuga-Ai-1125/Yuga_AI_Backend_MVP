@@ -27,6 +27,44 @@ const userSchema = new mongoose.Schema({
       message: "Passwords do not match",
     },
   },
+
+  preferences: {
+    learningStyle: {
+      type: String,
+      enum: ["visual", "auditory", "reading", "kinesthetic"],
+      default: "visual",
+    },
+    difficulty: {
+      type: String,
+      enum: ["easy", "intermediate", "hard"],
+      default: "intermediate",
+    },
+
+    notifications: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  progress: {
+    currentStreak: {
+      type: Number,
+      default: 0,
+    },
+    longestStreak: {
+      type: Number,
+      default: 0,
+    },
+    weeklyGoal: {
+      type: Number,
+      default: 5,
+    },
+    completedLessons: [
+      {
+        lessonId: String,
+        completedAt: Date,
+      },
+    ],
+  },
   resetPasswordToken: String,
   resetPasswordExpires: Date,
 });

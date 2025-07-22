@@ -21,9 +21,9 @@ app.use(
   })
 );
 app.use("/api/auth", authRoutes);
-app.use("/api", courseRoutes);
-app.use("/api", assessmentRoutes);
-app.use("/api", progressRoutes);
+app.use("/api/course", courseRoutes);
+app.use("/api/assessment", assessmentRoutes);
+app.use("/api/progress", progressRoutes);
 app.get("/", (req, res) => {
   res.send("Welcome to the Yuga Backend!");
 });
