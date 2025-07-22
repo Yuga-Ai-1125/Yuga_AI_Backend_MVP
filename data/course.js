@@ -5338,7 +5338,7 @@ These are included in the **Human Development Index (HDI)** by UNDP.
   },
   {
     id: "ENG-10",
-    name: "English (First Flight + Footprints)",
+    name: "English",
     chapters: 21,
     duration: 50,
     details: {
@@ -5716,7 +5716,7 @@ These are included in the **Human Development Index (HDI)** by UNDP.
   },
   {
     id: "HIN-10",
-    name: "Hindi (क्षितिज + कृतिका)",
+    name: "Hindi",
     chapters: 17,
     duration: 45,
     details: {
