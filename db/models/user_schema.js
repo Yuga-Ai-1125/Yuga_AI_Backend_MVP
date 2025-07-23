@@ -36,7 +36,7 @@ const userSchema = new mongoose.Schema({
     },
     difficulty: {
       type: String,
-      enum: ["easy", "intermediate", "hard"],
+      enum: ["beginner", "easy", "intermediate", "hard"],
       default: "intermediate",
     },
 

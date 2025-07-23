@@ -25,19 +25,17 @@ router.post("/google-login", googleLogin);
 
 router.get("/me", verifyToken, async (req, res) => {
   try {
-    console.log("User ID from token:", req.user.id);
     const user = await getUserProfileById(req.user.id);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Only sending essential fields
     res.status(200).json({
       _id: user._id,
       fullName: user.fullName,
       email: user.email,
-      currentStreak: user.currentStreak || 0, // optional field
+      currentStreak: user.currentStreak || 0,
     });
   } catch (err) {
     console.error("Error in /me route:", err);
