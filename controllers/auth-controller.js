@@ -15,7 +15,13 @@ export const signup = async (req, res) => {
       return res.status(409).json({ message: "Email already registered" });
     }
 
-    const newUser = new User({ fullName, email, password, confirmPassword });
+    // No need to hash manually — schema does it!
+    const newUser = new User({
+      fullName,
+      email,
+      password,
+      confirmPassword,
+    });
 
     await newUser.save();
 
@@ -23,12 +29,12 @@ export const signup = async (req, res) => {
 
     res.status(201).json({
       message: "User registered successfully",
+      token,
       user: {
-        _id: newUser._id,
+        id: newUser._id,
         fullName: newUser.fullName,
         email: newUser.email,
       },
-      token,
     });
   } catch (error) {
     console.error(error);
@@ -97,17 +103,17 @@ export const forgotPassword = async (req, res) => {
 
   try {
     if (!email) {
+      console.log(" Email not provided");
       return res.status(400).json({ message: "Email is required" });
     }
 
-    // Check if user exists
     const user = await User.findOne({ email });
 
     if (!user) {
+      console.log(" User not found for email:", email);
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Generate reset token and expiry
     const resetToken = crypto.randomBytes(32).toString("hex");
     const hashedToken = crypto
       .createHash("sha256")
@@ -115,18 +121,20 @@ export const forgotPassword = async (req, res) => {
       .digest("hex");
 
     user.resetPasswordToken = hashedToken;
-    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    user.resetPasswordExpires = Date.now() + 60 * 60 * 1000;
 
     await user.save({ validateBeforeSave: false });
+    console.log("Token saved to user");
 
-    // 🔐 Set up nodemailer
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
-        user: process.env.EMAIL_USER, // Your email from .env
-        pass: process.env.EMAIL_PASS, // App password
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
       },
     });
+
+    console.log("📧 Transporter created");
 
     const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
 
@@ -135,21 +143,28 @@ export const forgotPassword = async (req, res) => {
       to: user.email,
       subject: "Reset your password",
       html: `
-        <p>Hello ${user.fullName},</p>
+        <p>Hello ${user.fullName || "User"},</p>
         <p>You requested a password reset. Click the link below to reset your password:</p>
         <a href="${resetUrl}">Reset Password</a>
-        <p>This link will expire in 10 minutes.</p>
+        <p>This link will expire in 1 hour.</p>
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log("Reset email sent to:", user.email);
+    } catch (emailErr) {
+      console.error(" Failed to send email:", emailErr);
+      return res.status(500).json({ message: "Failed to send reset email" });
+    }
 
     res.status(200).json({ message: "Reset link sent to email" });
   } catch (err) {
-    console.error("❌ Error in forgotPassword:", err);
+    console.error(" Error in forgotPassword:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 // ✅ RESET PASSWORD CONTROLLER
 export const resetPassword = async (req, res) => {
   const { token, newPassword } = req.body;
