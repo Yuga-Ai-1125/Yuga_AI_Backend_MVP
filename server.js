@@ -16,10 +16,11 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: ["http://localhost:5173", "https://soft-longma-c0dc57.netlify.app"],
     credentials: true,
   })
 );
+
 app.use("/api/auth", authRoutes);
 app.use("/api/course", courseRoutes);
 app.use("/api/assessment", assessmentRoutes);
