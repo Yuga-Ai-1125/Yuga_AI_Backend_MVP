@@ -16,7 +16,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://soft-longma-c0dc57.netlify.app"],
+    origin: ["http://localhost:5173", "https://yugaai.vercel.app", "https://soft-longma-c0dc57.netlify.app"],
     credentials: true,
   })
 );
