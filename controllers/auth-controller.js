@@ -136,10 +136,10 @@ export const forgotPassword = async (req, res) => {
 
     console.log("📧 Transporter created");
 
-    const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+    const resetUrl = http://localhost:5173/reset-password/${resetToken};
 
     const mailOptions = {
-      from: `"Yuga Platform" <${process.env.EMAIL_USER}>`,
+      from: "Yuga Platform" <${process.env.EMAIL_USER}>,
       to: user.email,
       subject: "Reset your password",
       html: `
