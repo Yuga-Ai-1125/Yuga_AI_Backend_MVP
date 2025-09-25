@@ -1,16 +1,28 @@
 import { SpeechClient } from '@google-cloud/speech';
 import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import Groq from 'groq-sdk';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Load Google credentials from environment variable
-if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-  throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON environment variable is not set");
-}
-const googleCredentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const clientSTT = new SpeechClient({ credentials: googleCredentials });
-const clientTTS = new TextToSpeechClient({ credentials: googleCredentials });
+// Initialize Google Cloud clients using environment variables
+const getGoogleCredentials = () => {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    // For production (Render)
+    return JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  } else {
+    // For development (local file)
+    const keyPath = path.join(__dirname, '../google-service-account.json');
+    return { keyFilename: keyPath };
+  }
+};
 
+const clientSTT = new SpeechClient(getGoogleCredentials());
+const clientTTS = new TextToSpeechClient(getGoogleCredentials());
+
+// Initialize Groq client
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // Normalize category function
@@ -151,31 +163,47 @@ export const handleVoiceQuery = async (req, res) => {
 
     console.log('Raw courseCategory received:', courseCategory);
     courseCategory = normalizeCategory(courseCategory);
+    console.log('Normalized courseCategory:', courseCategory);
+    console.log('Available systemPrompts keys:', Object.keys(systemPrompts));
+    console.log('Selected systemPrompt:', systemPrompts[courseCategory] ? 'Found' : 'Not Found');
+    if (systemPrompts[courseCategory]) {
+      console.log('System prompt preview:', systemPrompts[courseCategory].substring(0, 100) + '...');
+    }
 
+    // If audio is provided, transcribe it
     let userSpeech = '';
     if (audio) {
       console.log('Processing audio data...');
       const audioBuffer = Buffer.from(audio, 'base64');
       userSpeech = await transcribeAudio(audioBuffer);
+      console.log('Transcribed speech:', userSpeech);
     } else if (messages.length > 0) {
+      // Get the last user message if no audio
       const lastUserMessage = messages.filter(m => m.role === 'user').pop();
       userSpeech = lastUserMessage?.content || '';
+      console.log('Using text message:', userSpeech);
     } else {
       return res.status(400).json({ error: 'No audio or text provided' });
     }
 
+    // Get response from Groq
     console.log('Getting response from Groq...');
     const reply = await getCompletion(userSpeech, courseCategory);
+    console.log('Groq response:', reply);
 
+    // Convert response to speech
     console.log('Synthesizing speech...');
     const audioContent = await synthesizeSpeech(reply);
+    console.log('Speech synthesized successfully');
 
+    // Ensure we're returning a proper base64 string
     let audioBase64;
     if (Buffer.isBuffer(audioContent)) {
       audioBase64 = audioContent.toString('base64');
     } else if (typeof audioContent === 'string') {
       audioBase64 = audioContent;
     } else {
+      // Handle Uint8Array or other types
       audioBase64 = Buffer.from(audioContent).toString('base64');
     }
 
@@ -186,7 +214,7 @@ export const handleVoiceQuery = async (req, res) => {
     });
   } catch (error) {
     console.error('Voice query error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       error: error.message,
       details: 'Check server logs for more information'
     });
