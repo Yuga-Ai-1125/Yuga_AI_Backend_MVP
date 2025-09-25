@@ -2,63 +2,124 @@ import { SpeechClient } from '@google-cloud/speech';
 import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import fetch from 'node-fetch';
 
-// Initialize Google Cloud clients using environment variable
-let clientSTT, clientTTS;
+// Load Google credentials from environment variable
+if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+  throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON environment variable is not set");
+}
+const googleCredentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
 
-try {
-  const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
-  
-  clientSTT = new SpeechClient({
-    credentials: serviceAccount
-  });
+// Initialize Google Cloud clients
+const clientSTT = new SpeechClient({ credentials: googleCredentials });
+const clientTTS = new TextToSpeechClient({ credentials: googleCredentials });
 
-  clientTTS = new TextToSpeechClient({
-    credentials: serviceAccount
-  });
-} catch (error) {
-  console.error('Error initializing Google Cloud clients:', error);
+// Normalize category function
+function normalizeCategory(category) {
+  if (!category) return 'NEET';
+  const cat = category.toLowerCase().replace(/\s+/g, '');
+  if (cat === 'neet') return 'NEET';
+  if (cat === 'mathematics' || cat === 'math') return 'Mathematics';
+  if (cat === 'science') return 'Science';
+  if (cat === 'socialscience') return 'SocialScience';
+  if (cat === 'english') return 'English';
+  if (cat === 'hindi') return 'Hindi';
+  if (cat === 'computerscience') return 'ComputerScience';
+  return 'NEET'; // default fallback
 }
 
-// System prompt for NEET assistant
-const systemPrompt = `
-You are an assistant that must only answer questions using the official NEET medical entrance test syllabus content.
-Always keep answers concise, factual, and strictly limited to NEET syllabus topics (Physics, Chemistry, Biology).
-If a user asks something outside the NEET syllabus, politely refuse and redirect them to ask a syllabus-related question.
-`;
+// System prompts for different subjects
+const systemPrompts = {
+  NEET: `You are an expert NEET (National Eligibility cum Entrance Test) tutor. Provide clear, concise explanations for Physics, Chemistry, and Biology concepts. Focus on:
+- NCERT-based explanations
+- Problem-solving strategies
+- Important formulas and concepts
+- Previous year question patterns
+- Time management tips
+Strictly limit responses to NEET syllabus topics.`,
+
+  Mathematics: `You are a Mathematics expert for CBSE/State Board curricula. Focus on:
+- Step-by-step problem solving
+- Mathematical reasoning
+- Formula applications
+- Real-world applications
+- Common misconceptions
+Provide clear explanations with examples.`,
+
+  Science: `You are a Science educator covering Physics, Chemistry, and Biology. Emphasize:
+- Conceptual understanding
+- Experimental learning
+- Real-world applications
+- Scientific methodology
+- Interdisciplinary connections
+Make science engaging and accessible.`,
+
+  SocialScience: `You are a Social Science specialist covering History, Geography, Civics, and Economics. Focus on:
+- Historical context and significance
+- Geographical patterns
+- Civic awareness
+- Economic principles
+- Current events connections
+Make social sciences relevant and interesting.`,
+
+  English: `You are an English language and literature expert. Cover:
+- Grammar and composition
+- Literary analysis
+- Writing skills
+- Communication strategies
+- Critical reading
+Focus on practical language skills.`,
+
+  Hindi: `You are a Hindi language and literature expert. Cover:
+- व्याकरण और रचना
+- साहित्यिक विश्लेषण
+- लेखन कौशल
+- संचार strategies
+- मौखिक अभिव्यक्ति
+Focus on comprehensive language development.`,
+
+  ComputerScience: `You are a Computer Science educator. Cover:
+- Programming concepts
+- Computational thinking
+- Software applications
+- Digital literacy
+- Emerging technologies
+Focus on practical coding skills and concepts.`
+};
 
 // Call Groq API
-async function getCompletion(messages) {
+async function getCompletion(messages, courseCategory) {
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
-  
   if (!GROQ_API_KEY) {
     throw new Error('GROQ_API_KEY environment variable is not set');
   }
+
+  const systemPrompt = systemPrompts[courseCategory] || systemPrompts.NEET;
+
+  const allMessages = [
+    { role: "system", content: systemPrompt },
+    ...messages
+  ];
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": Bearer ${GROQ_API_KEY},
+      "Authorization": `Bearer ${GROQ_API_KEY}`,
     },
     body: JSON.stringify({
       model: "llama-3.1-8b-instant",
-      messages,
+      messages: allMessages,
       max_tokens: 400,
       temperature: 0.2
     })
   });
 
-  if (!res.ok) throw new Error(Groq API error ${res.status});
+  if (!res.ok) throw new Error(`Groq API error ${res.status}`);
   const data = await res.json();
   return data.choices?.[0]?.message?.content ?? "";
 }
 
 // Convert text -> speech
 async function synthesizeSpeech(text) {
-  if (!clientTTS) {
-    throw new Error('Text-to-Speech client not initialized');
-  }
-
   const [response] = await clientTTS.synthesizeSpeech({
     input: { text },
     voice: { languageCode: "en-US", ssmlGender: "FEMALE" },
@@ -70,10 +131,6 @@ async function synthesizeSpeech(text) {
 
 // Transcribe audio
 async function transcribeAudio(audioBuffer) {
-  if (!clientSTT) {
-    throw new Error('Speech-to-Text client not initialized');
-  }
-
   const [response] = await clientSTT.recognize({
     audio: { content: audioBuffer.toString('base64') },
     config: {
@@ -88,34 +145,33 @@ async function transcribeAudio(audioBuffer) {
     .join('\n');
 }
 
-export const solveDoubt = async (req, res) => {
+export const handleVoiceQuery = async (req, res) => {
   try {
-    const { audio, messages = [] } = req.body;
-    
+    let { audio, messages = [], courseCategory = 'NEET' } = req.body;
+
+    console.log('Doubt Controller - Raw courseCategory received:', courseCategory);
+    courseCategory = normalizeCategory(courseCategory);
+
     // If audio is provided, transcribe it
     let userSpeech = '';
     if (audio) {
       const audioBuffer = Buffer.from(audio, 'base64');
       userSpeech = await transcribeAudio(audioBuffer);
     } else if (messages.length > 0) {
-      // Get the last user message if no audio
       const lastUserMessage = messages.filter(m => m.role === 'user').pop();
       userSpeech = lastUserMessage?.content || '';
     } else {
       return res.status(400).json({ error: 'No audio or text provided' });
     }
 
-    // Add system prompt to messages if not already present
+    // Add system prompt to messages
     const allMessages = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: systemPrompts[courseCategory] },
       ...messages,
       { role: "user", content: userSpeech }
     ];
 
-    // Get response from Groq
-    const reply = await getCompletion(allMessages);
-
-    // Convert response to speech
+    const reply = await getCompletion(allMessages, courseCategory);
     const audioContent = await synthesizeSpeech(reply);
 
     res.json({
@@ -124,7 +180,7 @@ export const solveDoubt = async (req, res) => {
       audio: audioContent.toString('base64')
     });
   } catch (error) {
-    console.error('Doubt solving error:', error);
+    console.error('Voice query error:', error);
     res.status(500).json({ error: error.message });
   }
 };
