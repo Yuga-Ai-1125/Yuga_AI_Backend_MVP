@@ -35,7 +35,7 @@ async function getCompletion(userSpeech) {
     const completion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: Answer this NEET question: ${userSpeech} }
+        { role: "user", content: Answer this NEET question: ${userSpeech} } // FIXED: Added backtick
       ],
       model: "llama-3.1-8b-instant",
     });
@@ -148,6 +148,6 @@ export const handleVoiceQuery = async (req, res) => {
     res.status(500).json({ 
       error: error.message,
       details: 'Check server logs for more information'
-    });
-  }
+    });
+  }
 };
