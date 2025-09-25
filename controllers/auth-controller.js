@@ -4,8 +4,17 @@ import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
 
-// ✅ Signup
+// Helper to set auth cookie
+const setAuthCookie = (res, token) => {
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production", // only secure in prod
+    sameSite: "none", // required for cross-site (Vercel <-> Render)
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+};
 
+// ✅ Signup
 export const signup = async (req, res) => {
   const { fullName, email, password, confirmPassword } = req.body;
 
@@ -15,7 +24,6 @@ export const signup = async (req, res) => {
       return res.status(409).json({ message: "Email already registered" });
     }
 
-    // No need to hash manually — schema does it!
     const newUser = new User({
       fullName,
       email,
@@ -26,10 +34,10 @@ export const signup = async (req, res) => {
     await newUser.save();
 
     const token = generateToken(newUser._id);
+    setAuthCookie(res, token);
 
     res.status(201).json({
       message: "User registered successfully",
-      token,
       user: {
         id: newUser._id,
         fullName: newUser.fullName,
@@ -37,7 +45,7 @@ export const signup = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error("Signup error:", error);
 
     if (error.name === "ValidationError") {
       const errors = Object.values(error.errors).map((err) => err.message);
@@ -48,7 +56,7 @@ export const signup = async (req, res) => {
   }
 };
 
-// ✅ Login Controller
+// ✅ Login
 export const login = async (req, res) => {
   const { email, password } = req.body;
 
@@ -58,23 +66,17 @@ export const login = async (req, res) => {
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
-    // console.log(user.email);
-    // console.log(user.password);
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const token = generateToken(user._id);
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "Lax", // or "None" if using cross-site cookies with HTTPS
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    setAuthCookie(res, token);
+
     res.status(200).json({
       message: "Login successful",
-      token,
       user: {
         id: user._id,
         fullName: user.fullName,
@@ -86,31 +88,33 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 // ✅ Logout
 export const logout = (req, res) => {
   try {
-    res.clearCookie("jwt");
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "none",
+    });
     res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
     console.error("Logout Error:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
-// forgotPassword
 
+// ✅ Forgot Password
 export const forgotPassword = async (req, res) => {
   const { email } = req.body;
 
   try {
     if (!email) {
-      console.log(" Email not provided");
       return res.status(400).json({ message: "Email is required" });
     }
 
     const user = await User.findOne({ email });
-
     if (!user) {
-      console.log(" User not found for email:", email);
       return res.status(404).json({ message: "User not found" });
     }
 
@@ -121,10 +125,8 @@ export const forgotPassword = async (req, res) => {
       .digest("hex");
 
     user.resetPasswordToken = hashedToken;
-    user.resetPasswordExpires = Date.now() + 60 * 60 * 1000;
-
+    user.resetPasswordExpires = Date.now() + 60 * 60 * 1000; // 1 hr
     await user.save({ validateBeforeSave: false });
-    console.log("Token saved to user");
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -134,9 +136,7 @@ export const forgotPassword = async (req, res) => {
       },
     });
 
-    console.log("📧 Transporter created");
-
-    const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+    const resetUrl = `https://yugaai.vercel.app/reset-password/${resetToken}`;
 
     const mailOptions = {
       from: `"Yuga Platform" <${process.env.EMAIL_USER}>`,
@@ -150,22 +150,16 @@ export const forgotPassword = async (req, res) => {
       `,
     };
 
-    try {
-      await transporter.sendMail(mailOptions);
-      console.log("Reset email sent to:", user.email);
-    } catch (emailErr) {
-      console.error(" Failed to send email:", emailErr);
-      return res.status(500).json({ message: "Failed to send reset email" });
-    }
+    await transporter.sendMail(mailOptions);
 
     res.status(200).json({ message: "Reset link sent to email" });
   } catch (err) {
-    console.error(" Error in forgotPassword:", err);
+    console.error("ForgotPassword error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
-// ✅ RESET PASSWORD CONTROLLER
+// ✅ Reset Password
 export const resetPassword = async (req, res) => {
   const { token, newPassword } = req.body;
 
@@ -194,10 +188,11 @@ export const resetPassword = async (req, res) => {
 
     res.status(200).json({ message: "Password reset successful" });
   } catch (err) {
-    console.error("Password reset error:", err);
+    console.error("ResetPassword error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 // ✅ Get User Profile
 export const getUserProfile = async (req, res) => {
   try {
@@ -212,13 +207,12 @@ export const getUserProfile = async (req, res) => {
 
     res.status(200).json(user);
   } catch (error) {
-    console.error("Get User Profile Error:", error);
+    console.error("GetUserProfile error:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
 // ✅ Update User Profile
-
 export const updateUserProfile = async (req, res) => {
   try {
     const userId = req.params.id;
@@ -252,17 +246,18 @@ export const updateUserProfile = async (req, res) => {
       user: updatedUser,
     });
   } catch (error) {
-    console.error("Update User Profile Error:", error);
+    console.error("UpdateUserProfile error:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
+// ✅ Utility
 export const getUserProfileById = async (userId) => {
   try {
     const user = await User.findById(userId).select("-password");
     return user;
   } catch (err) {
-    console.error("GetUserProfileById Error:", err);
+    console.error("GetUserProfileById error:", err);
     throw err;
   }
 };
