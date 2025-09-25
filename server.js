@@ -14,21 +14,31 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Increase payload limit for audio data
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(cookieParser());
+
+// Allow frontend domains (localhost + deployed frontend)
+const allowedOrigins = [
+  "http://localhost:5173",   // local dev
+  "https://soft-longma-c0dc57.netlify.app", // old deployment
+  "https://yugaai.vercel.app" // current frontend on Vercel
+];
+
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://soft-longma-c0dc57.netlify.app"],
+    origin: allowedOrigins,
     credentials: true,
   })
 );
 
+// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/course", courseRoutes);
 app.use("/api/assessment", assessmentRoutes);
 app.use("/api/progress", progressRoutes);
 app.use("/api/voice", voiceRoutes);
+
 app.get("/", (req, res) => {
   res.send("Welcome to the Yuga Backend!");
 });
@@ -36,9 +46,9 @@ app.get("/", (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  res.status(500).json({ error: "Something went wrong!" });
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
