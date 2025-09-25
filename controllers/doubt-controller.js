@@ -1,16 +1,26 @@
 import { SpeechClient } from '@google-cloud/speech';
 import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import fetch from 'node-fetch';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Load Google credentials from environment variable
-if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-  throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON environment variable is not set");
-}
-const googleCredentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// Initialize Google Cloud clients
-const clientSTT = new SpeechClient({ credentials: googleCredentials });
-const clientTTS = new TextToSpeechClient({ credentials: googleCredentials });
+// Initialize Google Cloud clients using environment variables
+const getGoogleCredentials = () => {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    // For production (Render)
+    return JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  } else {
+    // For development (local file)
+    const keyPath = path.join(__dirname, '../google-service-account.json');
+    return { keyFilename: keyPath };
+  }
+};
+
+const clientSTT = new SpeechClient(getGoogleCredentials());
+const clientTTS = new TextToSpeechClient(getGoogleCredentials());
 
 // Normalize category function
 function normalizeCategory(category) {
@@ -88,6 +98,7 @@ Focus on practical coding skills and concepts.`
 // Call Groq API
 async function getCompletion(messages, courseCategory) {
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  
   if (!GROQ_API_KEY) {
     throw new Error('GROQ_API_KEY environment variable is not set');
   }
@@ -151,6 +162,12 @@ export const handleVoiceQuery = async (req, res) => {
 
     console.log('Doubt Controller - Raw courseCategory received:', courseCategory);
     courseCategory = normalizeCategory(courseCategory);
+    console.log('Doubt Controller - Normalized courseCategory:', courseCategory);
+    console.log('Doubt Controller - Available systemPrompts keys:', Object.keys(systemPrompts));
+    console.log('Doubt Controller - Selected systemPrompt:', systemPrompts[courseCategory] ? 'Found' : 'Not Found');
+    if (systemPrompts[courseCategory]) {
+      console.log('Doubt Controller - System prompt preview:', systemPrompts[courseCategory].substring(0, 100) + '...');
+    }
 
     // If audio is provided, transcribe it
     let userSpeech = '';
@@ -158,20 +175,24 @@ export const handleVoiceQuery = async (req, res) => {
       const audioBuffer = Buffer.from(audio, 'base64');
       userSpeech = await transcribeAudio(audioBuffer);
     } else if (messages.length > 0) {
+      // Get the last user message if no audio
       const lastUserMessage = messages.filter(m => m.role === 'user').pop();
       userSpeech = lastUserMessage?.content || '';
     } else {
       return res.status(400).json({ error: 'No audio or text provided' });
     }
 
-    // Add system prompt to messages
+    // Add system prompt to messages if not already present
     const allMessages = [
       { role: "system", content: systemPrompts[courseCategory] },
       ...messages,
       { role: "user", content: userSpeech }
     ];
 
+    // Get response from Groq
     const reply = await getCompletion(allMessages, courseCategory);
+
+    // Convert response to speech
     const audioContent = await synthesizeSpeech(reply);
 
     res.json({
