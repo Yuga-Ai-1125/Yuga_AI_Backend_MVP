@@ -69,7 +69,7 @@ export const login = async (req, res) => {
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "Lax", // or "None" if using cross-site cookies with HTTPS
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
     res.status(200).json({
@@ -136,7 +136,11 @@ export const forgotPassword = async (req, res) => {
 
     console.log("📧 Transporter created");
 
-    const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+    // Dynamic reset URL based on environment - Fixed for production
+    const frontendUrl = process.env.NODE_ENV === 'production' 
+      ? 'https://yugaai.app' 
+      : 'http://localhost:5173';
+    const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
 
     const mailOptions = {
       from: `"Yuga Platform" <${process.env.EMAIL_USER}>`,
