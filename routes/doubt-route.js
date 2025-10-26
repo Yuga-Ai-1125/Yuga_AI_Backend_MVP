@@ -1,8 +1,13 @@
-import express from "express";
-import { solveDoubt } from "../controllers/doubt-controller.js";
+// voice-route.js
+import express from 'express';
+import { handleVoiceQuery, handleMCQExplanation } from '../controllers/doubt-controller.js';
 
 const router = express.Router();
 
-router.post("/solve", solveDoubt);
+// Existing voice query route
+router.post('/query', handleVoiceQuery);
+
+// New route for MCQ explanations
+router.post('/mcq-explanation', handleMCQExplanation);
 
 export default router;
